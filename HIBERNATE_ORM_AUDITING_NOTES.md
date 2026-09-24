@@ -149,6 +149,121 @@ This path would take longer because it depends on the Hibernate ORM release cycl
 
 Do not start the upstream split unless the maintainers explicitly choose it.
 
+
+## What "current auditor" means
+
+The current auditor should not be defined by Hibernate ORM itself.
+
+For a normal secured Quarkus HTTP request, the most common source would probably be the authenticated principal from `SecurityIdentity`, for example the principal name.
+
+But that is only one source.
+
+An application may want the auditor to be:
+
+- a username
+- an employee or account id
+- a service account
+- a system user for scheduled jobs
+- a value derived from tenant plus user
+- something from another authentication mechanism
+
+So the core contract should answer one question only:
+
+`Who should be recorded as the actor for this persistence operation?`
+
+The application or a Quarkus integration decides how to answer it.
+
+For the first version, keep the contract small. If the maintainers accept a String-only API, a shape like this is enough conceptually:
+
+`CurrentAuditorResolver -> String currentAuditor()`
+
+Do not lock the exact name or return type until maintainer feedback.
+
+A Quarkus Security adapter could later do:
+
+`SecurityIdentity -> Principal -> name -> CurrentAuditorResolver`
+
+That adapter should be separate from the ORM core contract.
+
+## Remaining design problems besides finding the auditor
+
+Resolving the current auditor is the main missing piece, but there are a few other behaviors that need an explicit answer before the API is final.
+
+### No auditor available
+
+Background jobs, startup code and unauthenticated operations may have no current user.
+
+The core should not silently invent values like `unknown`, `system` or `anonymous` unless the maintainers explicitly want that behavior.
+
+Possible policies are:
+
+- fail when an auditing annotation is used and no auditor can be resolved
+- allow no value and leave the field unchanged or null
+- let the application provider decide its own fallback
+
+This should be decided before the public API is fixed.
+
+### Overwriting an existing value
+
+For `@CreatedBy`, the expected behavior is probably to generate only on insert and not change the value later.
+
+For `@LastModifiedBy`, the value should be generated on insert and update.
+
+We should also decide whether manually assigned values are always overwritten on the relevant event or whether user-provided values can be preserved.
+
+Hibernate's generator API has mutation semantics for this, so this should be tested explicitly.
+
+### Auditor value type
+
+The current prototype uses `String`.
+
+A generic API could support UUIDs or domain-specific ids, but that adds API surface immediately.
+
+Do not generalize this in the first implementation unless the maintainers ask for it.
+
+### CDI scope and runtime context
+
+The resolver must work when the actual persistence operation happens, not only when Hibernate metadata is built.
+
+This matters because request-scoped security state may only exist at runtime.
+
+The generator should therefore resolve the auditor at the time of `generate()`, or use another runtime-safe bridge chosen by the maintainers.
+
+### Multiple persistence units
+
+Do not assume a persistence-unit-specific auditor unless there is a real requirement.
+
+One global resolver is simpler.
+
+If the maintainers want different auditors per persistence unit, then `@PersistenceUnitExtension` or another qualifier-based mechanism may become relevant.
+
+### Native image and build-time discovery
+
+Any new annotation, generator or CDI contract must work with Quarkus build-time discovery and native image.
+
+The Quarkus Hibernate ORM extension already scans `@ValueGenerationType` references through Jandex, which is a good sign, but the final implementation still needs a native/build-time-safe test path.
+
+### Reactive
+
+The current implementation uses synchronous Hibernate ORM `BeforeExecutionGenerator`.
+
+Do not treat Hibernate Reactive as covered by this work.
+
+If reactive support is wanted, it should be designed separately.
+
+## Smallest useful first version
+
+If the maintainers keep the feature in Quarkus, the smallest useful behavior is probably:
+
+1. application provides one current-auditor resolver
+2. `@CreatedBy` asks it on insert
+3. `@LastModifiedBy` asks it on insert and update
+4. the value is written before SQL execution
+5. no direct dependency from Hibernate ORM integration to `SecurityIdentity`
+6. behavior with no auditor is explicit and tested
+
+That is enough to make the feature useful without deciding every possible application policy up front.
+
 ## Current prototype parts to keep
 
 These are conceptually useful:
