@@ -8,6 +8,35 @@ It started as a Panache extension, but the actual implementation is already base
 
 Do not treat the API below as decided. The maintainers are still discussing where this should live and how the current auditor should be resolved.
 
+## Prototype now on this branch
+
+There is now a working-shape Quarkus-first prototype on this branch.
+
+The current API names are only placeholders until the maintainers confirm them:
+
+- `io.quarkus.hibernate.orm.audit.CreatedBy`
+- `io.quarkus.hibernate.orm.audit.LastModifiedBy`
+- `io.quarkus.hibernate.orm.audit.CurrentAuditorProvider`
+
+The generators live under `io.quarkus.hibernate.orm.runtime.audit`.
+
+The prototype follows the same runtime lookup style already used in Quarkus for context-dependent providers:
+
+- the provider is a CDI bean
+- it is looked up when the generated value is needed
+- provider beans are marked unremovable because the lookup is programmatic
+- no `SecurityIdentity` dependency is added to Hibernate ORM
+- no provider means the current property value is kept
+- a provider returning `null` also keeps the current property value
+- multiple providers are treated as a configuration error
+- auditing fields are currently limited to `String`
+- `@CreatedBy` runs on insert
+- `@LastModifiedBy` runs on insert and update
+
+The deployment tests cover a CDI provider, insert/update behavior, preserving values when no auditor is available, and operation without any provider bean.
+
+This is a prototype for review, not a claim that these API choices are final.
+
 ## What is already clear
 
 The timestamp side is not part of this work.
