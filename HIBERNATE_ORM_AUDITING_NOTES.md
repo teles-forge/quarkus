@@ -1,142 +1,203 @@
 # Hibernate ORM auditing notes
 
-This branch is just a checkpoint for the possible move of the auditing work into Quarkus core.
+This branch is a checkpoint for the auditing discussion in quarkusio/quarkus#54724.
 
-Related issue: quarkusio/quarkus#54724
+The current prototype is in `TelesNascimento/quarkus-panache-audit`.
 
-The current prototype lives in `TelesNascimento/quarkus-panache-audit`. It already works at the Hibernate ORM level and does not depend on Panache for the actual value generation.
+It started as a Panache extension, but the actual implementation is already based on Hibernate ORM value generation and works with regular JPA entities too.
 
-The direction being discussed with the maintainers is to move the feature into `quarkus-hibernate-orm` so regular JPA entities, Panache and Quarkus Data can all get the same behavior from ORM.
+Do not treat the API below as decided. The maintainers are still discussing where this should live and how the current auditor should be resolved.
 
-Do not treat the API below as final. We are still waiting for maintainer feedback.
+## What is already clear
 
-## What already works
+The timestamp side is not part of this work.
 
-The current prototype has:
+Hibernate ORM already has `@CreationTimestamp` and `@UpdateTimestamp`.
+
+The missing part is the actor side:
 
 - `@CreatedBy`
 - `@LastModifiedBy`
-- Hibernate `BeforeExecutionGenerator` based value generation
-- insert only generation for `@CreatedBy`
-- insert and update generation for `@LastModifiedBy`
-- plain JPA entity coverage
-- Panache coverage
-- a CDI abstraction called `AuditUserProvider`
 
-The part that should not be moved as-is is the default implementation tied directly to `SecurityIdentity`.
+The current prototype uses:
 
-## Current direction
+- `@ValueGenerationType`
+- `BeforeExecutionGenerator`
+- `INSERT_ONLY` for created by
+- `INSERT_AND_UPDATE` for last modified by
+- a CDI-facing `AuditUserProvider`
+- `SecurityIdentity` in the default provider
 
-The ORM side should stay generic.
+The generator approach is valid Hibernate ORM usage.
 
-A likely shape is:
+Hibernate ORM itself has a test called `GeneratorTypeTest` that defines a test-only current-user annotation and a `BeforeExecutionGenerator` that writes one user on insert and another on update.
 
-`Hibernate generator -> CDI auditor resolver -> application provided implementation`
+That is not a built-in auditing feature. Hibernate ORM currently has no public `@CreatedBy`, `@LastModifiedBy` or `AuditorAware` equivalent.
 
-The important part is that `quarkus-hibernate-orm` should not need to depend directly on Quarkus Security just to resolve the current user.
-
-`SecurityIdentity` can still be used by an application provided resolver, but it should not define the core auditing contract.
-
-There is already a similar pattern in the Hibernate ORM extension for tenant resolution:
-
-`Hibernate CurrentTenantIdentifierResolver -> Quarkus TenantResolver -> CDI bean`
-
-That is worth using as a reference before introducing a new pattern.
-
-
-## What Hibernate ORM already has
-
-Hibernate ORM does not currently provide public `@CreatedBy` or `@LastModifiedBy` annotations.
-
-What it does provide is the lower level value generation mechanism needed to build them.
-
-There is a test in Hibernate ORM called `GeneratorTypeTest` that defines its own test-only `@CurrentUserGeneration` annotation and a `LoggedUserGenerator`. It uses `BeforeExecutionGenerator` to write one user on insert and another on update.
-
-That class is not a reusable auditing feature. The annotation, current-user holder and generator all live inside the test. Searches of the Hibernate ORM source currently show no public `@CreatedBy`, `@LastModifiedBy` or `AuditorAware` equivalent.
-
-The test is still important because it proves the generator mechanism is a supported way to implement this behavior.
-
-Useful upstream reference:
+Useful reference:
 
 `hibernate-core/src/test/java/org/hibernate/orm/test/mapping/generated/GeneratorTypeTest.java`
 
-The test has existed for years in different forms. It was moved from the documentation test sources into `hibernate-core` in 2023 and migrated from the old `@GeneratorType` API to `@ValueGenerationType` and `BeforeExecutionGenerator` in 2024.
+## Earlier discussion that matters
 
-There is also an earlier Quarkus discussion in issue #53104 that matters here. Yoann pointed out that timestamps already exist in Hibernate ORM, while `CreatedBy` and `LastModifiedBy` still need a concept of the current user. He also said that if this feature lives in the Hibernate ORM extension, one possible direction would be to contribute the annotations and a current-user SPI upstream to Hibernate ORM. FroMage then suggested asking upstream ORM whether they want the feature.
+There was already a Quarkus discussion about this in #53104 in March 2026.
 
-As of this checkpoint there is no matching Hibernate ORM issue or public built-in feature for `CreatedBy` or `LastModifiedBy`.
+Yoann pointed out that `CreatedDate` and `LastModifiedDate` already exist in Hibernate ORM, while `CreatedBy` and `LastModifiedBy` need a concept of current user that Hibernate ORM does not have.
 
-This means the open design question is not whether Hibernate can generate the values. It can. The real question is where the reusable annotations and current-auditor contract should live.
+FroMage then suggested that the feature could live in the Quarkus Hibernate ORM extension instead of Panache.
 
-## First implementation scope
+Yoann said that if it goes through the Hibernate ORM extension, one possible direction would be to contribute the annotations to Hibernate ORM itself and add an SPI for current-user retrieval.
 
-Keep the first version small.
+He also noted that Hibernate ORM contributors might decide that the concept does not belong upstream.
 
-Move only the ORM specific auditing behavior:
+FroMage suggested asking Hibernate ORM upstream first.
 
-- auditing annotations
-- generators
-- a minimal CDI contract for resolving the current auditor
-- validation for the required resolver
-- tests with regular Hibernate ORM entities
+No built-in Hibernate ORM implementation or matching open issue was found at this checkpoint.
 
-Avoid adding Security integration to the first version unless the maintainers explicitly ask for it.
+## Current September discussion
 
-Avoid adding Hibernate Reactive support in the same change. The current generator implementation is for Hibernate ORM and reactive should be discussed separately.
+The current issue changed the framing because the prototype is no longer Panache-specific.
 
-Avoid supporting multiple auditor types, multiple persistence unit specific resolvers or other extra API until there is a concrete requirement.
+FroMage asked whether the feature should be added to `quarkus-hibernate-orm` proper.
 
-## Behavior to decide
+Luca's first concern was still the current-user problem.
 
-The current prototype falls back to values such as `system`, `anonymous` and `unknown`.
+The reply on the issue proposed keeping the ORM side generic and resolving the current auditor through a small CDI abstraction, with `SecurityIdentity` being only one possible source.
 
-That behavior probably should not move into core.
+That direction is consistent with the earlier discussion in #53104, but it is not approved yet.
 
-A safer core behavior would be to require an auditor resolver when `@CreatedBy` or `@LastModifiedBy` is used and fail with a clear message when none is available.
+We are still waiting for Luca and Yoann to confirm the direction.
 
-Do not implement this assumption blindly. Check the maintainer reply first.
+## What is not decided yet
 
-## Likely Quarkus area
+Do not lock these down before maintainer feedback:
 
-Start by looking under:
+- whether the annotations live in Quarkus or Hibernate ORM upstream
+- the name of the current-auditor contract
+- whether the auditor type is only `String` or generic
+- whether the resolver is global or persistence-unit specific
+- what happens when no resolver is available
+- whether Quarkus Security provides a default integration
+- package names
+- Hibernate Reactive support
 
-`extensions/hibernate-orm/runtime`
+## Important CDI constraint
 
-and:
+Do not assume the Hibernate generator itself can simply use constructor or field injection.
 
-`extensions/hibernate-orm/deployment`
+Hibernate ORM can instantiate generators through its `BeanContainer`, but Quarkus currently sets:
 
-Useful existing code to study:
+`hibernate.allow_extensions_in_cdi = false`
+
+during metadata building.
+
+Hibernate's `GeneratorBinder` only gets a `BeanContainer` for generator instantiation when that setting is enabled.
+
+So a design like this should not be assumed to work in Quarkus:
+
+`CreatedByGenerator -> @Inject CurrentAuditorResolver`
+
+The current prototype avoids that by resolving the provider at runtime through ArC inside `generate()`.
+
+That may still be a reasonable Quarkus-specific bridge, but it should be validated with the maintainers before making it the final design.
+
+There is already a similar runtime bridge in the Hibernate ORM extension for tenant resolution:
+
+`Hibernate CurrentTenantIdentifierResolver -> Quarkus TenantResolver -> CDI bean`
+
+Useful Quarkus references:
 
 - `HibernateCurrentTenantIdentifierResolver`
 - `TenantResolver`
 - `HibernateOrmCdiProcessor`
 - `PersistenceUnitExtension`
-- existing Hibernate ORM CDI integration tests
+- `FastBootMetadataBuilder`
+- `QuarkusArcBeanContainer`
 
-The new API name and package should stay open until the maintainers confirm the direction.
+## Most likely implementation paths
 
-## Tests we will probably need
+### Path 1: keep the feature in Quarkus
 
-At minimum:
+If the maintainers confirm `quarkus-hibernate-orm` as the home, the first implementation should stay small:
 
-- plain `@Entity` with `@CreatedBy`
-- plain `@Entity` with `@LastModifiedBy`
-- insert sets created by
-- insert sets last modified by
-- update changes last modified by
-- custom CDI auditor resolver is used
-- missing resolver has defined behavior
-- no dependency on Panache for the feature to work
+- add the auditing annotations
+- keep the Hibernate value generators
+- add a small current-auditor contract
+- resolve that contract through Quarkus CDI at runtime
+- keep `quarkus-hibernate-orm` independent from `SecurityIdentity`
+- cover regular JPA entities first
 
-A small Panache or Quarkus Data test can be added later if useful to prove the feature is inherited through ORM, but the core tests should exercise regular Hibernate ORM first.
+Security integration can be added separately if they want it.
 
-## Before writing the real PR
+### Path 2: split the work with Hibernate ORM upstream
 
-Wait for feedback on the issue, especially from Luca Molteni and Yoann Rodiere.
+If Yoann brings back the March direction, the work may need to be split:
 
-If they agree with the CDI abstraction direction, build the smallest prototype that follows existing Hibernate ORM extension patterns.
+Hibernate ORM:
 
-If they suggest an existing SPI or a different integration point, use that instead of creating another abstraction.
+- public auditing annotations
+- current-user SPI
+- generator integration
 
-The goal is not to preserve the current extension structure. The goal is to keep the useful Hibernate ORM part and fit it into Quarkus in the way the maintainers expect.
+Quarkus:
+
+- CDI integration for the SPI
+- optional integration with Quarkus Security
+- Quarkus-specific tests
+
+This path would take longer because it depends on the Hibernate ORM release cycle.
+
+Do not start the upstream split unless the maintainers explicitly choose it.
+
+## Current prototype parts to keep
+
+These are conceptually useful:
+
+- `CreatedBy`
+- `LastModifiedBy`
+- `BeforeExecutionGenerator`
+- event timing
+- the separation between generator and user provider
+- plain JPA coverage
+
+## Current prototype parts not to copy blindly
+
+The default `SecurityIdentity` implementation should not be moved into `quarkus-hibernate-orm` as-is.
+
+The fallback values also need another look:
+
+- `system`
+- `anonymous`
+- `unknown`
+
+Those are application semantics, not obviously ORM semantics.
+
+Do not decide the final missing-auditor behavior before the maintainer discussion is settled.
+
+## Tests for a Quarkus-first prototype
+
+If Path 1 is confirmed, start with regular Hibernate ORM tests:
+
+- plain `@Entity`
+- created by populated on insert
+- last modified by populated on insert
+- last modified by changed on update
+- custom CDI resolver used at runtime
+- behavior with no resolver explicitly tested
+- no Panache dependency required
+
+After that, add one small Panache or Quarkus Data test only if it helps prove the feature is inherited through ORM.
+
+Do not make Panache the core test target.
+
+## Before coding
+
+Check the issue again first.
+
+If Luca or Yoann confirm the CDI abstraction direction, implement the smallest prototype that follows existing Quarkus Hibernate ORM patterns.
+
+If they point to an existing SPI or ask for an upstream Hibernate ORM change, change the plan before writing code.
+
+The main open question is no longer whether Hibernate can generate the values. It can.
+
+The open question is where the reusable annotations and current-auditor contract should live, and how Quarkus should bridge that contract to CDI.
