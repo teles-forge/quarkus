@@ -66,6 +66,7 @@ import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
 import io.quarkus.gizmo.ClassTransformer;
 import io.quarkus.gizmo.MethodDescriptor;
 import io.quarkus.hibernate.orm.PersistenceUnit;
+import io.quarkus.hibernate.orm.audit.CurrentAuditorProvider;
 import io.quarkus.hibernate.orm.deployment.ClassNames;
 import io.quarkus.hibernate.orm.deployment.HibernateOrmEnabled;
 import io.quarkus.hibernate.orm.deployment.JpaModelBuildItem;
@@ -285,6 +286,11 @@ public class HibernateOrmCdiProcessor {
                 // ... but if they don't use CDI, we can safely default to instantiating in Hibernate ORM through reflection.
                 .requiresContainerServices()
                 .build());
+    }
+
+    @BuildStep
+    UnremovableBeanBuildItem currentAuditorProviders() {
+        return UnremovableBeanBuildItem.beanTypes(CurrentAuditorProvider.class);
     }
 
     @BuildStep
