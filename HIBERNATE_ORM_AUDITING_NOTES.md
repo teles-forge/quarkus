@@ -44,19 +44,29 @@ There is already a similar pattern in the Hibernate ORM extension for tenant res
 That is worth using as a reference before introducing a new pattern.
 
 
-## Existing Hibernate ORM precedent
+## What Hibernate ORM already has
 
-Hibernate ORM itself already has a test/example using this exact generator mechanism for created/updated user values.
+Hibernate ORM does not currently provide public `@CreatedBy` or `@LastModifiedBy` annotations.
 
-The upstream `GeneratorTypeTest` defines a custom `@CurrentUserGeneration` annotation backed by `BeforeExecutionGenerator`. It writes the current user on insert and update.
+What it does provide is the lower level value generation mechanism needed to build them.
 
-That means the generator approach is not unusual or specific to our prototype. The Quarkus-specific part is how the current auditor is resolved from application context.
+There is a test in Hibernate ORM called `GeneratorTypeTest` that defines its own test-only `@CurrentUserGeneration` annotation and a `LoggedUserGenerator`. It uses `BeforeExecutionGenerator` to write one user on insert and another on update.
+
+That class is not a reusable auditing feature. The annotation, current-user holder and generator all live inside the test. Searches of the Hibernate ORM source currently show no public `@CreatedBy`, `@LastModifiedBy` or `AuditorAware` equivalent.
+
+The test is still important because it proves the generator mechanism is a supported way to implement this behavior.
 
 Useful upstream reference:
 
 `hibernate-core/src/test/java/org/hibernate/orm/test/mapping/generated/GeneratorTypeTest.java`
 
-This is worth mentioning if the discussion moves from "should this exist?" to "is this the right Hibernate mechanism?".
+The test has existed for years in different forms. It was moved from the documentation test sources into `hibernate-core` in 2023 and migrated from the old `@GeneratorType` API to `@ValueGenerationType` and `BeforeExecutionGenerator` in 2024.
+
+There is also an earlier Quarkus discussion in issue #53104 that matters here. Yoann pointed out that timestamps already exist in Hibernate ORM, while `CreatedBy` and `LastModifiedBy` still need a concept of the current user. He also said that if this feature lives in the Hibernate ORM extension, one possible direction would be to contribute the annotations and a current-user SPI upstream to Hibernate ORM. FroMage then suggested asking upstream ORM whether they want the feature.
+
+As of this checkpoint there is no matching Hibernate ORM issue or public built-in feature for `CreatedBy` or `LastModifiedBy`.
+
+This means the open design question is not whether Hibernate can generate the values. It can. The real question is where the reusable annotations and current-auditor contract should live.
 
 ## First implementation scope
 
