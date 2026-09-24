@@ -43,6 +43,21 @@ There is already a similar pattern in the Hibernate ORM extension for tenant res
 
 That is worth using as a reference before introducing a new pattern.
 
+
+## Existing Hibernate ORM precedent
+
+Hibernate ORM itself already has a test/example using this exact generator mechanism for created/updated user values.
+
+The upstream `GeneratorTypeTest` defines a custom `@CurrentUserGeneration` annotation backed by `BeforeExecutionGenerator`. It writes the current user on insert and update.
+
+That means the generator approach is not unusual or specific to our prototype. The Quarkus-specific part is how the current auditor is resolved from application context.
+
+Useful upstream reference:
+
+`hibernate-core/src/test/java/org/hibernate/orm/test/mapping/generated/GeneratorTypeTest.java`
+
+This is worth mentioning if the discussion moves from "should this exist?" to "is this the right Hibernate mechanism?".
+
 ## First implementation scope
 
 Keep the first version small.
